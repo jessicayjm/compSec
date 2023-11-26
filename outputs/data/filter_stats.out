@@ -1,0 +1,18 @@
+### dev data ### -> dev_correct.json
+before excluding incorrectly predicted instances:
+# of instance before: 329
+# of instances have answers: 203
+# of instances not have answers: 126
+after excluding incorrectly predicted instances:
+# of instance before: 181
+# of instances have answers: 152
+# of instances not have answers: 29
+### test data ### -> test_correct.json
+before excluding incorrectly predicted instances:
+# of instance before: 329
+# of instances have answers: 194
+# of instances not have answers: 135
+after excluding incorrectly predicted instances:
+# of instance before: 168
+# of instances have answers: 143
+# of instances not have answers: 25

@@ -28,7 +28,9 @@ def format_data(data):
             for qa in qas:
                 question = qa['question']
                 id = qa['id']
-                answers = [answer['text'] for answer in qa['answers']]
+                # contain unique answers only
+                answers = qa['answers']
+                answers = list({answer['text']: answer for answer in answers}.values())
                 is_impossible = qa['is_impossible']
                 # append the output with format
                 outputs.append({
@@ -55,10 +57,10 @@ def split_data(data, train_percent, dev_percent):
     num_dev = int(dev_percent*total_len)
     num_test = total_len-num_train-num_dev
 
-    train_sample_indices = random.sample(indices,num_train)
+    train_sample_indices = random.sample(indices, num_train)
 
     indices = set(indices)-set(train_sample_indices)
-    dev_sample_indices = random.sample(indices,num_dev)
+    dev_sample_indices = random.sample(indices, num_dev)
 
     test_sample_indices = indices = set(indices)-set(dev_sample_indices)
 
@@ -92,7 +94,7 @@ if __name__=='__main__':
     
     formatted_filtered_data = format_data(filtered_data)
     
-    train_data, dev_data, test_data = split_data(formatted_filtered_data, 0.6,0.2)
+    train_data, dev_data, test_data = split_data(formatted_filtered_data, 0.6, 0.2)
     save_data(train_data, "train")
     save_data(dev_data, "dev")
     save_data(test_data, "test")

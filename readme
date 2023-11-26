@@ -1,0 +1,12 @@
+# go to model folder
+~: cd scripts/models
+
+# submit job
+# for asking model, change `prompts` in get_model_response.py`
+~: sbatch get_model_response.sh 
+
+# for testing on prompts for dev data
+~: sbatch test_prompt.sh 
+
+# check job queue
+~: squeue -u jiaminy
