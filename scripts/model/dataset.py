@@ -1,12 +1,15 @@
 import json
+import torch
 from torch.utils.data import Dataset
 
 class SquadDataset(Dataset):
-    def __init__(self, filename):
+    def __init__(self, filename, tokenizer, size=None):
         with open(filename, "r") as f:
-            data = json.load(f)
-
-        self.prompt_data = self._process_data(data)
+            self.data = json.load(f)
+        if size:
+            self.data = self.data[:size]
+        self.tokenizer = tokenizer
+        self.encodings = self._process_data(self.data)
 
     def show_stats(self):
         # num of instance, hasAnswers, hasNoAnswers
@@ -21,19 +24,20 @@ class SquadDataset(Dataset):
     def _process_data(self, data):
         processed_data = []
         for d in data:
-            instruction = "Given a context, answer the question if you can find an answer in it, otherwise answer 'Not possible.'"
-            prompt = f"[INST] {instruction} \n Context: {d['context']} \n Question: {d['question']} [/INST]"
-            processed_data.append({
-                'prompt': prompt,
-                'label': {
-                    'is_impossible': d['is_impossible'],
-                    'answer': d["answers"]
-                }
-            })
-        return processed_data
+            instruction = "### INSTRUCTION: Given a context, answer the question if you can find an answer in it, otherwise answer 'Not possible'."
+            if d['is_impossible']:
+                answer = "Not possible"
+            else:
+                answer = "\n".join([a['text'] for a in d['answers']])
+            prompt = f"{instruction} \n ### Context: {d['context']} \n ### Question: {d['question']} \n ### Answer: {answer}"
+            processed_data.append(prompt)
+        
+        encodings = self.tokenizer(processed_data, return_tensors="pt", padding=True, truncation=True)
+        return encodings
 
     def __len__(self):
-        return len(self.prompt_data)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        return self.prompt_data[idx]
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        return item

@@ -1,3 +1,9 @@
+# activate conda
+~: conda activate /net/scratch/jiaminy/compsec/env
+
+# access project folder
+~: cd /net/scratch/jiaminy/compsec/scripts
+
 # go to model folder
 ~: cd scripts/models
 

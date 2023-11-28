@@ -2,3 +2,4 @@ env/
 /data/
 slurm-*
 __pycache__/
+checkpoints/
