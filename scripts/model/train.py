@@ -101,4 +101,4 @@ if __name__=='__main__':
         max_seq_length=args.max_seq_length
     )
     trainer.train()
-    trainer.save_model(f"checkpoints/{args.output_dir}/")
+    trainer.save_pretrained_model(f"checkpoints/{args.output_dir}/")

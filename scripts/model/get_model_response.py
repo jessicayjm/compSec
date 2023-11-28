@@ -48,8 +48,11 @@ if __name__=='__main__':
     }
 
     num_instances = 2
-    prompts = ["What's the similar word of exempt?", 
-               ""]
+    w = 'exempt'
+    prompts = ["What's the similar word of " + w + "?", 
+               "What words are similar to " + w + " to you?",
+               "What terms are related to " + w + "?",
+               "What terms are unrelated to " + w + "?"]
     for i, prompt in enumerate(prompts):
         print(f'======= prompt {i} =======')
         generate(generator, prompt, **generate_args)
