@@ -34,13 +34,14 @@ def get_args():
 
 def generate(generator, data, **kwargs):
     correct_instances = []
+    incorrect_instances = []
     count_has_answer = 0
     correct_count_has_answer = 0
     correct_count_no_answer = 0
     for i, instance in enumerate(data):
         if not instance['is_impossible']: count_has_answer += 1
         new_instance = instance
-        instruction = "Given a context, answer the question if you can find an answer in it, otherwise answer 'Not possible.'"
+        instruction = "Given a context, answer the question by extracting answer if you can find it from the context, otherwise answer 'Not possible.'"
         prompt = f"[INST] {instruction} \n Context: {instance['context']} \n Question: {instance['question']} [/INST]"
         output = generator(prompt,
                         do_sample=kwargs['do_sample'],
@@ -50,15 +51,23 @@ def generate(generator, data, **kwargs):
         new_instance['model_output'] = output
         # check if the output is correct
         # if one of the answers is in the output, then it's counted as correct
-        if instance['is_impossible'] and 'not possible' in output:
-            correct_instances.append(new_instance)
-            correct_count_no_answer += 1
+        if instance['is_impossible']:
+            if 'not possible' in output:
+                correct_instances.append(new_instance)
+                correct_count_no_answer += 1
+            else:
+                incorrect_instances.append(new_instance)
         else:
+            found = False
             for answer in instance['answers']:
                 if answer['text'].lower() in output:
                     if not instance['is_impossible']: correct_count_has_answer += 1
                     correct_instances.append(new_instance)
+                    found = True
                     break
+            if not found:
+                incorrect_instances.append(new_instance)
+            
     print(f"before excluding incorrectly predicted instances:")
     print(f"# of instance before: {len(data)}")
     print(f"# of instances have answers: {count_has_answer}")
@@ -68,11 +77,13 @@ def generate(generator, data, **kwargs):
     print(f"# of instance before: {len(correct_instances)}")
     print(f"# of instances have answers: {correct_count_has_answer}")
     print(f"# of instances not have answers: {correct_count_no_answer}")
-    return correct_instances
+    return correct_instances, incorrect_instances
 
 if __name__=='__main__':
     args = get_args()
 
+    with open(args.train_data, "r") as f:
+        train_data = json.load(f)
     with open(args.dev_data, "r") as f:
         dev_data = json.load(f)
     with open(args.test_data, "r") as f:
@@ -98,12 +109,27 @@ if __name__=='__main__':
         'top_k': 30,
         'temperature': 1.0
     }
-    dev_correct_instances = generate(generator, dev_data, **generate_args)
-    test_correct_instances = generate(generator, test_data, **generate_args)
+    train_correct_instances, train_incorrect_instances = generate(generator, train_data, **generate_args)
+    dev_correct_instances, dev_incorrect_instances = generate(generator, dev_data, **generate_args)
+    test_correct_instances, test_incorrect_instances = generate(generator, test_data, **generate_args)
+
+    
+    with open(f"../../outputs/data/train_correct.json", "w") as f:
+        f.write(json.dumps(train_correct_instances, indent=4))
 
     with open(f"../../outputs/data/dev_correct.json", "w") as f:
         f.write(json.dumps(dev_correct_instances, indent=4))
     
     with open(f"../../outputs/data/test_correct.json", "w") as f:
         f.write(json.dumps(test_correct_instances, indent=4))
+
+    with open(f"../../outputs/data/train_incorrect.json", "w") as f:
+        f.write(json.dumps(train_incorrect_instances, indent=4))
+
+    with open(f"../../outputs/data/dev_incorrect.json", "w") as f:
+        f.write(json.dumps(dev_incorrect_instances, indent=4))
+    
+    with open(f"../../outputs/data/test_incorrect.json", "w") as f:
+        f.write(json.dumps(test_incorrect_instances, indent=4))
+
 

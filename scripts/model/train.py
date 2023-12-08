@@ -3,14 +3,16 @@ import json
 import random
 import argparse
 import torch
+from tqdm import tqdm
 import numpy as np
+import re
 
 from dataset import SquadDataset
 
 from peft import LoraConfig
 
 from transformers import TrainingArguments, pipeline
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM, LlamaForCausalLM
 from trl import SFTTrainer
 
 
@@ -35,8 +37,8 @@ def get_args():
     parser.add_argument('--lr_scheduler_type', type=str, default="constant")
     parser.add_argument('--warmup_ratio', type=float, default=0.03)
     parser.add_argument('--num_train_epochs', type=int, default=10)
-    parser.add_argument('--logging_steps', type=int, default=10)
-    parser.add_argument('--output_dir', type=str, default='model')
+    # parser.add_argument('--logging_steps', type=int, default=10)
+    parser.add_argument('--output_dir', type=str, default='')
 
     parser.add_argument('--random_seed', type=int, default=0)
     
@@ -52,6 +54,62 @@ def get_args():
         torch.backends.cudnn.benchmark = False
     return args
 
+def evaluate(generator, test_data, instruction, logdir, name, **kwargs):
+    has_answer = 0
+    has_answer_correct = 0
+    no_answer = 0
+    no_answer_correct = 0
+    outputs = []
+    for instance in tqdm(test_data):
+        if instance['is_impossible']:
+            no_answer += 1
+        else:
+            has_answer += 1
+        prompt = f"[INST] ### INSTRUCTION: {instruction} \n ### CONTEXT: {instance['context']} \n ### QUESTION: {instance['question']} [/INST]"
+        output = generator(prompt,
+                        do_sample=kwargs['do_sample'],
+                        top_k=kwargs['top_k'],
+                        temperature=kwargs['temperature'])[0]['generated_text']
+        output = output[len(prompt):].lower() # remove prompt from output
+        # # extract answer
+        # clean_outputs = re.findall(r'### answer: .*',output)
+        # if len(clean_outputs) == 0:
+        #     clean_output = output[:150]
+        #     # correct=False
+        #     # if instance['is_impossible']: no_answer += 1
+        #     # else: has_answer += 1
+        # else: 
+        #     clean_output = clean_outputs[0][12:-2]
+        correct = False
+        if instance['is_impossible']:
+            answer = "not possible"
+            if answer in output:
+                no_answer_correct += 1
+                correct=True
+        else:
+            answer = "\n".join([a['text'] for a in instance['answers']])
+            for a in instance['answers']:
+                if a['text'].lower() in output:
+                    has_answer_correct += 1
+                    correct=True
+                    break
+        new_instance = instance
+        new_instance['model_output'] = output
+        # new_instance['model_clean_output'] = output
+        new_instance['is_correct'] = correct
+        outputs.append(new_instance)
+
+    with open(f'{logdir}/{name}.json', 'w') as f:
+        f.write(json.dumps(outputs, indent=4))
+    
+    with open(f'{logdir}/{name}.log', 'w') as f:
+        f.write("##### Results #####\n")
+        f.write(f'#total answer: {has_answer+no_answer}, #has answer correct: {has_answer_correct+no_answer_correct}, accuracy:{(has_answer_correct+no_answer_correct)/(has_answer+no_answer)}\n')
+        f.write(f'#has answer: {has_answer}, #has answer correct: {has_answer_correct}, accuracy:{has_answer_correct/has_answer}\n')
+        f.write(f'#no answer: {no_answer}, #no answer correct: {no_answer_correct}, accuracy:{no_answer_correct/no_answer}\n')
+
+
+
 if __name__=='__main__':
     args = get_args()
 
@@ -61,23 +119,24 @@ if __name__=='__main__':
     tokenizer.padding_side = "right"
 
     train_data = SquadDataset(args.train_data, tokenizer, args.train_data_size)
-    dev_data = SquadDataset(args.dev_data, tokenizer)
-    test_data = SquadDataset(args.test_data, tokenizer)
+    with open(args.dev_data, 'r') as f:
+        dev_data = json.load(f)
+    with open(args.test_data, 'r') as f:
+        test_data = json.load(f)
 
-    model = LlamaForCausalLM.from_pretrained(llama2_path, device_map='balanced')
+    model = AutoModelForCausalLM.from_pretrained(llama2_path, device_map='balanced')
     model.half()
 
     training_args = TrainingArguments(
         output_dir=f"checkpoints/{args.output_dir}/",
         per_device_train_batch_size=args.per_device_train_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        # gradient_accumulation_steps=args.gradient_accumulation_steps,
         optim=args.optim,
-        logging_steps=args.logging_steps,
+        logging_strategy = 'epoch',
         learning_rate=args.learning_rate,
         bf16=args.bf16,
         max_grad_norm=args.max_grad_norm,
         num_train_epochs=args.num_train_epochs,
-        save_strategy="epoch",
         warmup_ratio=args.warmup_ratio,
         lr_scheduler_type=args.lr_scheduler_type,
         deepspeed="deepspeed_config.json")
@@ -94,11 +153,36 @@ if __name__=='__main__':
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_data,
-        peft_config=peft_parameters,
+        # peft_config=peft_parameters,
         dataset_text_field="text",
         tokenizer=tokenizer,
         args=training_args,
         max_seq_length=args.max_seq_length
     )
     trainer.train()
-    trainer.save_pretrained_model(f"checkpoints/{args.output_dir}/")
+    # model = trainer.model.merge_and_unload()
+
+    trainer.save_model(f"{args.output_dir}/model")
+
+    generator = pipeline(task="text-generation", 
+                        model=trainer.model, 
+                        tokenizer=tokenizer, 
+                        max_length=2048)
+
+    # modify from here
+    generate_args = {
+        'do_sample': True,      #to consider more random samples
+        'top_k': 30,            #how many words do we chose from
+        'temperature': 1.0      #parameter for flattening with softmax function
+    }
+    instruction = "Given a context, answer the question by extracting answer if you can find it from the context, otherwise answer 'Not possible'."
+
+    # dev_data = dev_data[:3]
+    # print("begin dev")
+    # evaluate(generator, dev_data, instruction, args.output_dir, 'dev', **generate_args)
+
+    # test_data = test_data[:10]
+    print("begin test")
+    evaluate(generator, test_data, instruction, args.output_dir, 'test', **generate_args)
+
+    print("finished")

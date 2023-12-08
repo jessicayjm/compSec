@@ -1,5 +1,7 @@
 env/
+/outputs/
 /data/
 slurm-*
 __pycache__/
 checkpoints/
+*.pdf

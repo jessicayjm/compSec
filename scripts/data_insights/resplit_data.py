@@ -1,3 +1,4 @@
+import re
 import json
 import random
 
@@ -19,17 +20,20 @@ def filter_by_topics(data, titles):
 # output format: List[Dict]
 # Dict keys: title, context, question, id, answers(text only), is_impossible
 def format_data(data):
+    unicode_escape_pattern = r'[^\x00-\x7F]+'
     outputs = []
     for instance in data:
-        title = instance['title']
+        title = re.sub(unicode_escape_pattern, ' ', instance['title'].encode().decode('unicode-escape'))
         for paragraph in instance['paragraphs']:
-            context = paragraph['context']
+            context = re.sub(unicode_escape_pattern, ' ', paragraph['context'].encode().decode('unicode-escape'))
             qas = paragraph['qas']
             for qa in qas:
-                question = qa['question']
+                question = re.sub(unicode_escape_pattern, ' ', qa['question'].encode().decode('unicode-escape'))
                 id = qa['id']
                 # contain unique answers only
                 answers = qa['answers']
+                for i, a in enumerate(answers):
+                    answers[i]['text'] = re.sub(unicode_escape_pattern, ' ', a['text'].encode().decode('unicode-escape'))
                 answers = list({answer['text']: answer for answer in answers}.values())
                 is_impossible = qa['is_impossible']
                 # append the output with format

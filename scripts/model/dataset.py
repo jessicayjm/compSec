@@ -7,9 +7,10 @@ class SquadDataset(Dataset):
         with open(filename, "r") as f:
             self.data = json.load(f)
         if size:
-            self.data = self.data[:size]
+            self.data = self.data[:min(size,len(self.data))]
         self.tokenizer = tokenizer
-        self.encodings = self._process_data(self.data)
+        self.input_ids, \
+        self.attention_masks = self._process_data(self.data)
 
     def show_stats(self):
         # num of instance, hasAnswers, hasNoAnswers
@@ -24,20 +25,23 @@ class SquadDataset(Dataset):
     def _process_data(self, data):
         processed_data = []
         for d in data:
-            instruction = "### INSTRUCTION: Given a context, answer the question if you can find an answer in it, otherwise answer 'Not possible'."
-            if d['is_impossible']:
-                answer = "Not possible"
-            else:
-                answer = "\n".join([a['text'] for a in d['answers']])
-            prompt = f"{instruction} \n ### Context: {d['context']} \n ### Question: {d['question']} \n ### Answer: {answer}"
+            instruction = "### INSTRUCTION: Given a context, answer the question by extracting answer if you can find it from the context, otherwise answer 'Not possible'."
+            answer = d['answers'][0]['text']
+            prompt = f"{instruction} \n ### CONTEXT: {d['context']} \n ### QUESTION: {d['question']} \n ### ANSWER: {answer}"
             processed_data.append(prompt)
         
         encodings = self.tokenizer(processed_data, return_tensors="pt", padding=True, truncation=True)
-        return encodings
+        input_ids = encodings['input_ids']
+        attention_masks = encodings['attention_mask']
+        return torch.LongTensor(input_ids), \
+               torch.LongTensor(attention_masks)
+
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        return item
+        return {
+            'input_ids': self.input_ids[idx],
+            'attention_mask': self.attention_masks[idx]
+        }
